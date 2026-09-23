@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Khnk X</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0d0408; 
+            font-family: 'Inter', sans-serif;
+            color: #ffffff;
+        }
+        
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        .glass-panel {
+            background: rgba(20, 5, 12, 0.65);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 105, 180, 0.25);
+        }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            overflow: hidden;
+            cursor: pointer;
+            padding: 0;
+            background: none;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 50%;
+            box-shadow: inset 0 0 0 1px rgba(255,105,180,0.4);
+        }
+
+        .shape-btn { transition: all 0.2s ease; }
+        .shape-btn.active {
+            background: rgba(255, 105, 180, 0.35);
+            border-color: rgba(255, 105, 180, 0.9);
+            box-shadow: 0 0 12px rgba(255, 105, 180, 0.5);
+            color: #ffb6c1;
+        }
+        .shape-btn:hover:not(.active) { background: rgba(255, 105, 180, 0.15); }
+        
+        #video-feed {
+            position: absolute !important;
+            opacity: 0 !important; 
+            pointer-events: none !important;
+            z-index: -10 !important;
+            width: 10px !important; 
+            height: 10px !important;
+            top: 0; left: 0;
+        }
+
+        .loader {
+            border: 3px solid rgba(255, 105, 180, 0.2);
+            border-top: 3px solid #ff69b4;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .content-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            width: 75%;
+            max-width: 750px;
+            max-height: 80vh;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 25px 50px -12px rgba(255, 105, 180, 0.25);
+        }
+
+        .content-overlay.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+
+        .content-overlay::-webkit-scrollbar { width: 4px; }
+        .content-overlay::-webkit-scrollbar-thumb {
+            background: rgba(255, 105, 180, 0.3);
+            border-radius: 10px;
+        }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .photo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255, 105, 180, 0.05);
+            padding: 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 105, 180, 0.15);
+        }
+
+        .photo-grid img {
+            width: 100%;
+            height: 110px;
+            object-fit: cover;
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 10px rgba(255, 105, 180, 0.15);
+            background: rgba(255, 105, 180, 0.08);
+        }
+
+        .photo-name {
+            font-size: 10px;
+            color: #ffb6c1;
+            margin-top: 6px;
+            font-weight: 500;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+        
+        .text-pink-gradient {
+            background: linear-gradient(to right, #ffb6c1, #ff69b4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        @supports (height: 100dvh) {
+            body { min-height: 100dvh; }
+            #canvas-container { height: 100dvh; }
+        }
+
+        @media (max-width: 640px) {
+            html, body {
+                width: 100%; height: 100%;
+                overflow: hidden; overscroll-behavior: none;
+                -webkit-text-size-adjust: 100%; touch-action: manipulation;
+            }
+            #canvas-container { width: 100%; height: 100dvh; }
+
+            #left-panel {
+                top: max(4px, env(safe-area-inset-top)) !important;
+                left: 0 !important;
+                width: 110px !important;
+            }
+            #left-panel .glass-panel {
+                padding: 5px 6px !important;
+                border-radius: 0 10px 10px 0 !important;
+                border-left: none !important;
+            }
+            #left-panel h1 { font-size: 8px !important; margin-bottom: 1px !important; }
+            #left-panel p { font-size: 6px !important; }
+
+            #right-sidebar { right: 0 !important; }
+            #right-sidebar .glass-panel {
+                padding: 4px 3px !important;
+                gap: 4px !important;
+                border-radius: 10px 0 0 10px !important;
+                border-right: none !important;
+            }
+            #right-sidebar .shape-btn {
+                padding: 4px 2px !important;
+                width: 32px !important;
+                border-radius: 6px !important;
+            }
+            #right-sidebar .shape-btn span.text-base { 
+                font-size: 13px !important; 
+                line-height: 1 !important;
+            }
+            #right-sidebar input[type="color"] {
+                width: 18px !important;
+                height: 18px !important;
+            }
+
+            .content-overlay {
+                width: calc(100vw - 40px) !important; 
+                max-width: none !important;
+                max-height: calc(100dvh - 12px) !important;
+                padding: 12px !important;
+                border-radius: 12px !important;
+                left: calc(50% - 6px) !important; 
+            }
+
+            .content-overlay h2.text-3xl { font-size: .95rem !important; }
+            .content-overlay p {
+                font-size: .68rem !important;
+                line-height: 1.4 !important;
+            }
+
+            .photo-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 5px !important; 
+                margin-top: 8px !important;
+            }
+            .photo-grid img { height: 65px !important; border-radius: 6px !important; }
+            .photo-name { font-size: 8px !important; margin-top: 4px !important; }
+        }
+    </style>
+</head>
+<body>
+    <audio id="background-music" autoplay loop preload="auto">
+        <source src="On Bended Knee.mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="loading-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0d0408] transition-opacity duration-500">
+        <div class="loader mb-4"></div>
+        <h2 class="text-xl font-light tracking-wider text-pink-200">Mempersiapkan Kejutan...</h2>
+        <p class="text-pink-300/60 text-sm mt-2 max-w-md text-center">Izinkan akses kamera, kemudian buka tangan Anda untuk melihatnya.</p>
+    </div>
+
+    <!-- 3D Canvas & Sensor -->
+    <div id="canvas-container"></div>
+    <video id="video-feed" autoplay muted playsinline webkit-playsinline></video>
+
+    <!-- PANEL KIRI ATAS -->
+    <div id="left-panel" class="absolute top-4 left-0 z-20 flex flex-col">
+        <div class="glass-panel p-2.5 rounded-r-xl shadow-xl">
+            <h1 class="text-[9px] font-bold tracking-wide text-pink-100">Khnk X 🌸</h1>
+            <p class="text-[8px] text-pink-200/90 font-medium">Khnk X5</p>
+            <p class="text-[7px] text-pink-300/70 tracking-wider">2026</p>
+            <div class="mt-2 pt-1.5 border-t border-pink-500/20">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-[8px] text-pink-200">Sensor</span>
+                    <span id="status-indicator" class="flex h-2 w-2 relative">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+                    </span>
+                </div>
+                <p class="text-[6.5px] text-pink-300/60 mt-0.5 leading-tight">Buka tangan penuh</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANEL KANAN: Pilihan Memori -->
+    <div id="right-sidebar" class="absolute top-1/2 right-0 transform -translate-y-1/2 z-20">
+        <div class="glass-panel p-2 rounded-l-xl shadow-xl flex flex-col items-center gap-1.5">
+            <button class="shape-btn active p-1.5 rounded-lg border border-pink-500/20 text-center flex items-center justify-center w-8 h-8" data-shape="heart" title="Echoes of Love">
+                <span class="text-base">💖</span>
+            </button>
+            <button class="shape-btn p-1.5 rounded-lg border border-pink-500/20 text-center flex items-center justify-center w-8 h-8" data-shape="lily" title="Lily of My Heart">
+                <span class="text-base">⚜️</span>
+            </button>
+            <button class="shape-btn p-1.5 rounded-lg border border-pink-500/20 text-center flex items-center justify-center w-8 h-8" data-shape="torus" title="Eternal Moments">
+                <span class="text-base">🌸</span>
+            </button>
+            <button class="shape-btn p-1.5 rounded-lg border border-pink-500/20 text-center flex items-center justify-center w-8 h-8" data-shape="plane" title="Heartfelt Whispers">
+                <span class="text-base">💌</span>
+            </button>
+            
+            <div class="w-full border-t border-pink-500/20 my-0.5"></div>
+            
+            <div class="flex flex-col items-center">
+                <div class="flex items-center justify-center p-0.5 border border-pink-500/30 rounded-full">
+                    <input type="color" id="color-picker" value="#ff69b4">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENT OVERLAYS -->
+    
+    <!-- HEART: Echoes of Love -->
+    <div id="content-heart" class="content-overlay glass-panel">
+        <h2 class="text-3xl font-bold mb-1 text-center text-pink-gradient">Khnk X5</h2>
+        <p class="text-center text-pink-200/80 mb-4 text-xs">Khnk X5</p>
+        <div class="photo-grid" id="photo-grid-1"></div>
+    </div>
+
+    <!-- LILY: Lily of My Heart -->
+    <div id="content-lily" class="content-overlay glass-panel">
+        <div class="text-center mb-6 border-b border-pink-500/20 pb-4">
+            <h2 class="text-3xl font-bold mb-1 text-pink-gradient">Khnk X5</h2>
+            <p class="text-xs tracking-[0.2em] text-pink-300/70 uppercase">2026</p>
+        </div>
+        <div class="text-center">
+            <p class="text-pink-100/90 text-sm">Khnk X5</p>
+        </div>
+    </div>
+
+    <!-- TORUS: Eternal Moments -->
+    <div id="content-torus" class="content-overlay glass-panel">
+        <h2 class="text-3xl font-bold mb-1 text-center text-pink-gradient">Khnk X5</h2>
+        <p class="text-center text-pink-200/80 mb-4 text-xs">Khnk X5</p>
+        <div class="photo-grid" id="photo-grid-2"></div>
+    </div>
+
+    <!-- PLANE: Heartfelt Whispers -->
+    <div id="content-plane" class="content-overlay glass-panel">
+        <div class="text-center py-8">
+            <h2 class="text-3xl font-bold mb-3 text-pink-gradient">Khnk X5</h2>
+            <p class="text-pink-100/80 text-sm">Khnk X5</p>
+        </div>
+    </div>
+
+    <script>
+        const photoFileID = "1X79UPWIHRnMQcviAmmaJXRsVzJa4mE52";
+        const totalPhotosPerGrid = 12;
+
+        function renderPhotos(containerId) {
+            const container = document.getElementById(containerId);
+            for (let i = 1; i <= totalPhotosPerGrid; i++) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'photo-item';
+
+                const img = document.createElement('img');
+                img.src = `https://drive.google.com/thumbnail?id=${photoFileID}&sz=w1000`;
+                img.loading = "lazy";
+                img.onerror = () => {
+                    if (!img.dataset.fallback) {
+                        img.dataset.fallback = "1";
+                        img.src = `https://drive.google.com/uc?export=view&id=${photoFileID}`;
+                    }
+                };
+
+                const nameLabel = document.createElement('span');
+                nameLabel.className = 'photo-name';
+                nameLabel.textContent = `Khnk X5`;
+
+                wrapper.appendChild(img);
+                wrapper.appendChild(nameLabel);
+                container.appendChild(wrapper);
+            }
+        }
+        
+        renderPhotos('photo-grid-1');
+        renderPhotos('photo-grid-2');
+
+        const PARTICLE_COUNT = 15000;
+        let scene, camera, renderer, particles;
+        let positions, basePositions, explodeOffsets;
+        
+        let currentShape = 'heart';
+        let targetDispersion = 0; 
+        let currentDispersion = 0;
+        
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x0d0408, 0.0015);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 250;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            const canvasText = document.createElement('canvas');
+            canvasText.width = 64; canvasText.height = 64;
+            const ctx = canvasText.getContext('2d');
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.translate(32, 22); 
+            ctx.scale(1.2, 1.2);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(0, -10, -15, -15, -20, -5);
+            ctx.bezierCurveTo(-25, 5, -10, 20, 0, 30);
+            ctx.bezierCurveTo(10, 20, 25, 5, 20, -5);
+            ctx.bezierCurveTo(15, -15, 0, -10, 0, 0);
+            ctx.fill();
+
+            const texture = new THREE.CanvasTexture(canvasText);
+
+            const geometry = new THREE.BufferGeometry();
+            positions = new Float32Array(PARTICLE_COUNT * 3);
+            basePositions = new Float32Array(PARTICLE_COUNT * 3);
+            explodeOffsets = new Float32Array(PARTICLE_COUNT * 3);
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('basePosition', new THREE.BufferAttribute(basePositions, 3));
+            
+            const colorHex = document.getElementById('color-picker').value;
+            
+            const material = new THREE.PointsMaterial({
+                size: 3.8,
+                color: new THREE.Color(colorHex),
+                map: texture,
+                transparent: true,
+                opacity: 0.9,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            generateShape(currentShape);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function generateShape(shapeType) {
+            const isMobile = window.innerWidth < 640;
+            
+            if (shapeType === 'heart') {
+                const size = isMobile ? 3.5 : 6.0;
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const i3 = i * 3;
+                    const t = Math.random() * Math.PI * 2;
+                    const hx = 16 * Math.pow(Math.sin(t), 3);
+                    const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                    const thickness = (Math.random() - 0.5) * 12;
+                    const fillFactor = Math.pow(Math.random(), 0.35);
+                    
+                    let x = hx * size * fillFactor;
+                    let y = hy * size * fillFactor;
+                    let z = thickness * (1 - Math.abs(hy)/20) * (size * 0.4); 
+
+                    basePositions[i3] = x; basePositions[i3 + 1] = y; basePositions[i3 + 2] = z;
+                    if (positions[i3] === 0 && positions[i3+1] === 0 && positions[i3+2] === 0) {
+                         positions[i3] = x; positions[i3 + 1] = y; positions[i3 + 2] = z;
+                    }
+                    const mag = Math.sqrt(x*x + y*y + z*z) || 1;
+                    explodeOffsets[i3] = (x / mag) * size * 15 * 3 + (Math.random() - 0.5) * 40;
+                    explodeOffsets[i3 + 1] = (y / mag) * size * 15 * 3 + (Math.random() - 0.5) * 40;
+                    explodeOffsets[i3 + 2] = (z / mag) * size * 15 * 3 + (Math.random() - 0.5) * 40;
+                }
+            } 
+            else if (shapeType === 'lily') {
+                const lilyScale = isMobile ? 45 : 75;
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const i3 = i * 3;
+                    const petalIndex = Math.floor(Math.random() * 6); 
+                    const angleOffset = (petalIndex * Math.PI * 2) / 6;
+                    const u = (Math.random() - 0.5) * Math.PI * 0.8; 
+                    const v = Math.random(); 
+                    
+                    const r = lilyScale * Math.sin(v * Math.PI) * (1.2 + 0.4 * Math.cos(u * 2));
+                    let x = r * Math.sin(u + angleOffset);
+                    let y = (v * lilyScale * 1.5) - (lilyScale * 0.4) + (Math.abs(u) * 15);
+                    let z = r * Math.cos(u + angleOffset);
+
+                    basePositions[i3] = x; basePositions[i3 + 1] = y; basePositions[i3 + 2] = z;
+                    if (positions[i3] === 0 && positions[i3+1] === 0 && positions[i3+2] === 0) {
+                         positions[i3] = x; positions[i3 + 1] = y; positions[i3 + 2] = z;
+                    }
+                    const mag = Math.sqrt(x*x + y*y + z*z) || 1;
+                    explodeOffsets[i3] = (x / mag) * lilyScale * 3 + (Math.random() - 0.5) * 50;
+                    explodeOffsets[i3 + 1] = (y / mag) * lilyScale * 3 + (Math.random() - 0.5) * 50;
+                    explodeOffsets[i3 + 2] = (z / mag) * lilyScale * 3 + (Math.random() - 0.5) * 50;
+                }
+            }
+            else {
+                const shapeSize = isMobile ? 55 : 100;
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    let x, y, z;
+                    if (shapeType === 'torus') {
+                        const R = shapeSize * 0.8; const r = shapeSize * 0.3;
+                        const u = Math.random() * Math.PI * 2; const v = Math.random() * Math.PI * 2;
+                        const randomR = r * Math.sqrt(Math.random()); 
+                        x = (R + randomR * Math.cos(v)) * Math.cos(u);
+                        y = (R + randomR * Math.cos(v)) * Math.sin(u);
+                        z = randomR * Math.sin(v);
+                    }
+                    else if (shapeType === 'plane') {
+                        x = (Math.random() - 0.5) * shapeSize * 2.5; 
+                        y = (Math.random() - 0.5) * shapeSize * 2.5; 
+                        z = (Math.random() - 0.5) * 10;
+                    }
+
+                    const i3 = i * 3;
+                    basePositions[i3] = x; basePositions[i3 + 1] = y; basePositions[i3 + 2] = z;
+                    if (positions[i3] === 0 && positions[i3+1] === 0 && positions[i3+2] === 0) {
+                         positions[i3] = x; positions[i3 + 1] = y; positions[i3 + 2] = z;
+                    }
+                    const mag = Math.sqrt(x*x + y*y + z*z) || 1;
+                    explodeOffsets[i3] = (x / mag) * shapeSize * 3 + (Math.random() - 0.5) * 50;
+                    explodeOffsets[i3 + 1] = (y / mag) * shapeSize * 3 + (Math.random() - 0.5) * 50;
+                    explodeOffsets[i3 + 2] = (z / mag) * shapeSize * 3 + (Math.random() - 0.5) * 50;
+                }
+            }
+            particles.geometry.attributes.basePosition.needsUpdate = true;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            generateShape(currentShape);
+        }
+
+        function initMediaPipe() {
+            const videoElement = document.getElementById('video-feed');
+            const statusIndicator = document.querySelector('#status-indicator span:last-child');
+            const statusPing = document.querySelector('#status-indicator span:first-child');
+            const loadingScreen = document.getElementById('loading-screen');
+
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults((results) => {
+                if (loadingScreen.style.opacity !== '0') {
+                    loadingScreen.style.opacity = '0';
+                    setTimeout(() => loadingScreen.style.display = 'none', 500);
+                }
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    statusIndicator.classList.remove('bg-pink-500'); statusIndicator.classList.add('bg-green-400');
+                    statusPing.classList.remove('bg-pink-400'); statusPing.classList.add('bg-green-300');
+
+                    const landmarks = results.multiHandLandmarks[0];
+                    calculateHandOpenness(landmarks);
+                } else {
+                    statusIndicator.classList.remove('bg-green-400'); statusIndicator.classList.add('bg-pink-500');
+                    statusPing.classList.remove('bg-green-300'); statusPing.classList.add('bg-pink-400');
+                    targetDispersion = 0.0; 
+                }
+            });
+
+            videoElement.setAttribute('playsinline', '');
+            videoElement.setAttribute('webkit-playsinline', '');
+            videoElement.muted = true;
+
+            const startCamera = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 } },
+                        audio: false
+                    });
+                    videoElement.srcObject = stream;
+                    await videoElement.play();
+
+                    const processFrame = async () => {
+                        if (videoElement.readyState >= 2) {
+                            try { await hands.send({ image: videoElement }); } catch (err) {}
+                        }
+                        requestAnimationFrame(processFrame);
+                    };
+                    requestAnimationFrame(processFrame);
+                } catch (err) {
+                    loadingScreen.innerHTML = `
+                        <h2 class="text-xl font-light text-pink-400 mb-2">Akses Kamera Diperlukan</h2>
+                        <p class="text-sm text-pink-300/70">Di Safari iPhone, tekan Izinkan saat diminta.</p>
+                        <button onclick="location.reload()" class="mt-4 px-4 py-2 border border-pink-500/30 text-pink-200 rounded-lg">Coba Lagi</button>
+                    `;
+                }
+            };
+            startCamera();
+        }
+
+        function calculateHandOpenness(landmarks) {
+            const wrist = landmarks[0];
+            const fingerChains = [[1,2,3,4], [5,6,7,8], [9,10,11,12], [13,14,15,16], [17,18,19,20]];
+
+            const distance3D = (a, b) => Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2));
+            const clamp01 = value => Math.max(0, Math.min(value, 1));
+            const palmSize = Math.max(distance3D(wrist, landmarks[9]), distance3D(landmarks[5], landmarks[17]), 0.001);
+
+            const fingerScores = [];
+            fingerChains.forEach(chain => {
+                const mcp = landmarks[chain[0]]; const pip = landmarks[chain[1]];
+                const dip = landmarks[chain[2]]; const tip = landmarks[chain[3]];
+                const extension = distance3D(wrist, tip) / palmSize;
+                const pathLength = distance3D(mcp, pip) + distance3D(pip, dip) + distance3D(dip, tip);
+                const straightness = pathLength > 0 ? distance3D(mcp, tip) / pathLength : 0;
+                
+                fingerScores.push(clamp01((extension - 1.15) / 1.05) * 0.7 + clamp01((straightness - 0.42) / 0.50) * 0.3);
+            });
+
+            const averageOpen = fingerScores.reduce((sum, value) => sum + value, 0) / fingerScores.length;
+            const openFingers = fingerScores.filter(value => value > 0.42).length;
+            const handOpenness = averageOpen * 0.65 + (openFingers / fingerScores.length) * 0.35;
+            targetDispersion = Math.pow(clamp01(handOpenness), 1.25) * 1.5;
+        }
+
+        function updateContentVisibility() {
+            const contents = {
+                'heart': document.getElementById('content-heart'),
+                'lily': document.getElementById('content-lily'),
+                'torus': document.getElementById('content-torus'),
+                'plane': document.getElementById('content-plane')
+            };
+
+            Object.values(contents).forEach(el => el.classList.remove('visible'));
+            if (currentDispersion > 0.8 && contents[currentShape]) {
+                contents[currentShape].classList.add('visible');
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            currentDispersion += (targetDispersion - currentDispersion) * 0.08;
+            updateContentVisibility();
+
+            const posAttribute = particles.geometry.attributes.position;
+            const baseAttribute = particles.geometry.attributes.basePosition;
+
+            particles.rotation.y += 0.002;
+            
+            const time = Date.now() * 0.003;
+            let heartPulse = 1.0;
+            if (currentShape === 'heart') {
+                particles.rotation.x = 0; 
+                const beat = Math.sin(time * 3);
+                if (beat > 0) {
+                    heartPulse = 1.0 + Math.pow(beat, 4) * 0.06 * (1 - currentDispersion);
+                }
+            } else {
+                particles.rotation.x += 0.001;
+            }
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const targetX = (baseAttribute.array[i3] * heartPulse) + explodeOffsets[i3] * currentDispersion;
+                const targetY = (baseAttribute.array[i3 + 1] * heartPulse) + explodeOffsets[i3 + 1] * currentDispersion;
+                const targetZ = (baseAttribute.array[i3 + 2] * heartPulse) + explodeOffsets[i3 + 2] * currentDispersion;
+                const hoverOffset = Math.sin(time + i) * 0.4 * (1 - currentDispersion); 
+
+                posAttribute.array[i3] += (targetX - posAttribute.array[i3]) * 0.1;
+                posAttribute.array[i3 + 1] += (targetY + hoverOffset - posAttribute.array[i3 + 1]) * 0.1;
+                posAttribute.array[i3 + 2] += (targetZ - posAttribute.array[i3 + 2]) * 0.1;
+            }
+            posAttribute.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        function setupUI() {
+            const shapeBtns = document.querySelectorAll('.shape-btn');
+            shapeBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    shapeBtns.forEach(b => b.classList.remove('active'));
+                    const targetBtn = e.target.closest('.shape-btn');
+                    targetBtn.classList.add('active');
+                    currentShape = targetBtn.dataset.shape;
+                    generateShape(currentShape);
+                });
+            });
+
+            document.getElementById('color-picker').addEventListener('input', (e) => {
+                if(particles && particles.material) {
+                    particles.material.color.setHex(e.target.value.replace('#', '0x'));
+                }
+            });
+        }
+    
+        const backgroundMusic = document.getElementById('background-music');
+        backgroundMusic.volume = 1.0;
+        function startBackgroundMusic() { backgroundMusic.play().catch(() => {}); }
+        startBackgroundMusic();
+        ['click', 'touchstart', 'keydown'].forEach(eventName => {
+            window.addEventListener(eventName, startBackgroundMusic, { once: true });
+        });
+
+        window.onload = () => {
+            initThreeJS();
+            setupUI();
+            initMediaPipe();
+            animate();
+        };
+    </script>
+</body>
+</html>
